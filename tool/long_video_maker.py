@@ -1,45 +1,25 @@
+"""
+long_video_maker.py — 全自動長片生成引擎
+使用 Gemini API 自動撰寫連載劇本，搭配 Edge-TTS 配音與 Pollinations 生圖，
+持續產出影片直到達成目標時長。
+"""
+
 import os
 import sys
 import time
 import argparse
 import subprocess
-import urllib.parse
-import urllib.request
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
 
-def get_audio_duration(vtt_path):
-    """從 VTT 字幕檔最後一行推算語音長度 (簡單估算)"""
-    try:
-        with open(vtt_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            for line in reversed(lines):
-                if '-->' in line:
-                    # 格式: 00:00:01.000 --> 00:00:02.500
-                    end_time = line.split('-->')[1].strip()
-                    h, m, s = end_time.split(':')
-                    return int(h)*3600 + int(m)*60 + float(s)
-    except:
-        pass
-    return 60.0 # 預設
+from utils import (
+    get_ffmpeg_bin, get_edge_tts_bin,
+    get_mp3_duration, generate_image
+)
 
-def generate_image(prompt, save_path):
-    """使用 Pollinations.ai 產生免金鑰 AI 圖片"""
-    print(f"    [圖] 正在生成圖片，關鍵字: {prompt[:30]}...")
-    encoded_prompt = urllib.parse.quote(prompt + " realistic, high quality, cinematic, 8k, photorealistic")
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=True"
-    try:
-        urllib.request.urlretrieve(url, save_path)
-        print("    [圖] 圖片下載成功。")
-    except Exception as e:
-        print(f"    [圖] 圖片下載失敗: {e}")
-        # 如果失敗，建立一張黑圖
-        ffmpeg_bin = r"C:\Users\asus-pc\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
-        subprocess.run([ffmpeg_bin, "-y", "-f", "lavfi", "-i", "color=c=black:s=1280x720:d=1", "-vframes", "1", save_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="全自動長片生成引擎")
     parser.add_argument("--prompt", required=True, help="故事主題")
     parser.add_argument("--outdir", required=True, help="輸出資料夾")
     parser.add_argument("--duration", type=int, default=3600, help="目標總時長(秒)")
@@ -54,27 +34,27 @@ def main():
     api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
     key_idx = 0
     client = genai.Client(api_key=api_keys[key_idx])
-    
+
     os.makedirs(args.outdir, exist_ok=True)
-    
-    ffmpeg_bin = r"C:\Users\asus-pc\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
-    edge_tts_bin = os.path.join(os.path.dirname(sys.executable), "edge-tts")
+
+    ffmpeg = get_ffmpeg_bin()
+    edge_tts = get_edge_tts_bin()
 
     total_duration = 0.0
     chapter = 1
     chapter_files = []
-    
+
     # 手動維護劇情歷史，方便切換 API 金鑰時不會遺失脈絡
     story_history = ""
-    
+
     print(f"開始生成長篇影片，目標長度：{args.duration} 秒")
-    
+
     with open(os.path.join(args.outdir, "story.txt"), "w", encoding="utf-8") as f_story:
         f_story.write(f"主題：{args.prompt}\n\n")
 
     while total_duration < args.duration:
         print(f"\n--- 正在生成第 {chapter} 集 ---")
-        
+
         system_prompt = (
             f"你是一個專職寫作寫實都市劇的短劇編劇。我們正在連載一部長篇影片，主題是：{args.prompt}。\n"
             f"這是到目前為止的劇情：\n{story_history[-3000:] if story_history else '（目前是第一集，請直接開頭）'}\n\n"
@@ -98,22 +78,23 @@ def main():
                 err_msg = str(e)
                 print(f"Gemini API 錯誤: {err_msg}")
                 if "429" in err_msg or "quota" in err_msg.lower():
-                    print("    [!] 目前金鑰碰到速率限制 (RPM) 或額度耗盡，切換到下一把金鑰並啟動自動換 IP 程序 (Cloudflare WARP)...")
+                    print("    [!] 速率限制，切換金鑰並嘗試 WARP 換 IP...")
                     key_idx = (key_idx + 1) % len(api_keys)
                     client = genai.Client(api_key=api_keys[key_idx])
-                    
+
                     try:
-                        # 執行 WARP 斷線與重連
-                        subprocess.run(["warp-cli", "disconnect"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(["warp-cli", "disconnect"], check=False,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         time.sleep(2)
-                        subprocess.run(["warp-cli", "connect"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        print("    [!] IP 切換指令已送出，等待 8 秒讓新連線穩定...")
+                        subprocess.run(["warp-cli", "connect"], check=False,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        print("    [!] IP 切換指令已送出，等待 8 秒...")
                         time.sleep(8)
-                    except Exception as warp_err:
-                        print(f"    [!] 執行 warp-cli 失敗 (請確認已安裝並啟動 Cloudflare WARP)。退回等待 60 秒策略...")
+                    except FileNotFoundError:
+                        print("    [!] warp-cli 未安裝，等待 60 秒後重試...")
                         time.sleep(60)
                 else:
-                    time.sleep(5) # 其他錯誤稍後重試
+                    time.sleep(5)
 
         # 解析文字與 Image Prompt
         image_prompt = "A cinematic realistic shot of an urban city"
@@ -133,11 +114,15 @@ def main():
         # 2. 生成配音與字幕
         audio_path = os.path.join(args.outdir, f"audio_{chapter}.mp3")
         vtt_path = os.path.join(args.outdir, f"subs_{chapter}.vtt")
-        
-        edge_cmd = [edge_tts_bin, "--voice", "zh-CN-YunxiNeural", "--text", script_text, "--write-media", audio_path, "--write-subtitles", vtt_path]
+
+        edge_cmd = [edge_tts, "--voice", "zh-CN-YunxiNeural",
+                    "--text", script_text,
+                    "--write-media", audio_path,
+                    "--write-subtitles", vtt_path]
         subprocess.run(edge_cmd, check=True, stdout=subprocess.DEVNULL)
-        
-        duration = get_audio_duration(vtt_path)
+
+        # 改用 ffprobe 精確時長（統一使用 utils 模組）
+        duration = get_mp3_duration(audio_path)
         total_duration += duration
         print(f"    [配音] 完成。本集長度：{duration:.1f} 秒 (總進度: {total_duration:.1f}/{args.duration} 秒)")
 
@@ -148,7 +133,7 @@ def main():
         # 4. 合成本集影片 (靜態圖片 + 音軌 + 字幕)
         vid_path = os.path.join(args.outdir, f"chapter_{chapter}.mp4")
         ffmpeg_cmd = [
-            ffmpeg_bin, "-y",
+            ffmpeg, "-y",
             "-loop", "1", "-framerate", "2",
             "-i", img_path,
             "-i", audio_path,
@@ -158,11 +143,12 @@ def main():
             "-shortest", vid_path
         ]
         print("    [合成] 正在打包本集影片...")
-        subprocess.run(ffmpeg_cmd, cwd=args.outdir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(ffmpeg_cmd, cwd=args.outdir, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         chapter_files.append(f"chapter_{chapter}.mp4")
-        
+
         chapter += 1
-        time.sleep(2) # 避免 API 頻率限制
+        time.sleep(2)  # 避免 API 頻率限制
 
     # 5. 合併所有章節
     print("\n所有章節生成完畢，正在合併成最終長片...")
@@ -170,16 +156,18 @@ def main():
     with open(list_path, "w", encoding="utf-8") as f:
         for cf in chapter_files:
             f.write(f"file '{cf}'\n")
-            
+
     final_vid = os.path.join(args.outdir, "FINAL_MOVIE.mp4")
     concat_cmd = [
-        ffmpeg_bin, "-y", "-f", "concat", "-safe", "0",
+        ffmpeg, "-y", "-f", "concat", "-safe", "0",
         "-i", "list.txt",
         "-c", "copy", final_vid
     ]
-    subprocess.run(concat_cmd, cwd=args.outdir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
+    subprocess.run(concat_cmd, cwd=args.outdir, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     print(f"恭喜！影片合併完成。最終檔案位於：{final_vid}")
+
 
 if __name__ == "__main__":
     main()

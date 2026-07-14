@@ -1,3 +1,8 @@
+"""
+test_text_api.py — 測試 Pollinations 文字 API
+一次性測試腳本，非正式產出工具。
+"""
+
 import requests
 import urllib.parse
 

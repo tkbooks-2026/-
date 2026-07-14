@@ -1,10 +1,15 @@
+"""
+test_proxy.py — 測試 Proxy 繞過 Gemini API 速率限制
+一次性測試腳本，非正式產出工具。
+"""
+
 import os
 import requests
 import time
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv('.env')
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 api_key = os.getenv('GEMINI_API_KEYS').split(',')[0]
 
 def get_proxies():
@@ -21,7 +26,7 @@ for p in proxies[:10]:
     print(f"Testing proxy: {p}")
     os.environ["HTTP_PROXY"] = f"http://{p}"
     os.environ["HTTPS_PROXY"] = f"http://{p}"
-    
+
     client = genai.Client(api_key=api_key)
     try:
         response = client.models.generate_content(
@@ -32,7 +37,7 @@ for p in proxies[:10]:
         break
     except Exception as e:
         print("Failed:", e)
-    
+
     # reset env
     del os.environ["HTTP_PROXY"]
     del os.environ["HTTPS_PROXY"]
