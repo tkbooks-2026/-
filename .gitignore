@@ -1,7 +1,13 @@
+# Python
 tool/venv/
-.env
 __pycache__/
 *.pyc
+
+# 環境變數（含敏感金鑰）
+.env
+
+# 已廢棄的錯誤腳本
+tool/fix_chapters.py
 
 # 忽略所有小說產出的大型媒體檔
 小說產出庫/**/*.mp4

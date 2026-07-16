@@ -79,9 +79,18 @@ def main():
                         "--write-subtitles", vtt_path]
             subprocess.run(edge_cmd, check=True, stdout=subprocess.DEVNULL)
 
-        duration = get_mp3_duration(audio_path)
+        trimmed_audio_path = os.path.join(args.outdir, f"trimmed_audio_{chap_num}.mp3")
+        if not os.path.exists(trimmed_audio_path):
+            trim_cmd = [
+                ffmpeg, "-y", "-i", audio_path,
+                "-af", "areverse,silenceremove=start_periods=1:start_silence=0:start_threshold=-50dB,areverse",
+                trimmed_audio_path
+            ]
+            subprocess.run(trim_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+        duration = get_mp3_duration(trimmed_audio_path)
         total_duration += duration
-        print(f"    [配音] 準備完畢。長度: {duration:.1f} 秒")
+        print(f"    [配音] 去靜音處理完畢。長度: {duration:.1f} 秒")
 
         # 2. 處理圖片
         if not os.path.exists(img_path):
@@ -91,18 +100,15 @@ def main():
 
         # 3. 合成影片
         if not os.path.exists(vid_path):
-            fade_out_start = max(0, duration - 1.0)
             vf_filter = (
-                f"fade=t=in:st=0:d=1,"
-                f"fade=t=out:st={fade_out_start:.2f}:d=1,"
-                f"subtitles=subs_{chap_num}.vtt"
+                f"subtitles=subs_{chap_num}.vtt:force_style='FontSize=40,Outline=2,Shadow=1,MarginV=30'"
             )
 
             ffmpeg_cmd = [
                 ffmpeg, "-y",
-                "-loop", "1", "-framerate", "2",
+                "-loop", "1", "-framerate", "15",
                 "-i", f"image_{chap_num}.jpg",
-                "-i", f"audio_{chap_num}.mp3",
+                "-i", f"trimmed_audio_{chap_num}.mp3",
                 "-vf", vf_filter,
                 "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac",
                 "-b:a", "192k", "-pix_fmt", "yuv420p",
@@ -123,7 +129,7 @@ def main():
         for vid in chapter_vids:
             f.write(f"file '{vid}'\n")
 
-    final_vid_base = "FINAL_MOVIE.mp4"
+    final_vid_base = "FINAL_MOVIE_15fps.mp4"
     concat_cmd = [
         ffmpeg, "-y", "-f", "concat", "-safe", "0",
         "-i", "list.txt",

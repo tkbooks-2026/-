@@ -137,7 +137,7 @@ def main():
             "-loop", "1", "-framerate", "2",
             "-i", img_path,
             "-i", audio_path,
-            "-vf", f"subtitles=subs_{chapter}.vtt",
+            "-vf", f"subtitles=subs_{chapter}.vtt:force_style='FontSize=40,Outline=2,Shadow=1,MarginV=30'",
             "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac",
             "-b:a", "192k", "-pix_fmt", "yuv420p",
             "-shortest", vid_path
