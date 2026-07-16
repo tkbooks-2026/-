@@ -26,8 +26,11 @@ ffmpeg -y -i audio_{X}.mp3 -af "areverse,silenceremove=start_periods=1:start_sil
 ### 2.2 單集影片合成 (幀率與字幕樣式)
 合成每集影片時，必須使用以下參數，確保畫面刷新率足夠且字幕清晰：
 ```bash
-ffmpeg -y -loop 1 -framerate 15 -i image_{X}.jpg -i trimmed_audio_{X}.mp3 -vf "subtitles=subs_{X}.vtt:force_style='FontSize=40,Outline=2,Shadow=1,MarginV=30'" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest chapter_{X}.mp4
+ffmpeg -y -loop 1 -framerate 15 -i image_{X}.jpg -i trimmed_audio_{X}.mp3 -t {DURATION} -vf "subtitles=subs_{X}.vtt:force_style='FontSize=40,Outline=2,Shadow=1,MarginV=30'" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p chapter_{X}.mp4
 ```
+
+> **重要**：使用 `-t {DURATION}`（精確截斷為音訊時長）取代 `-shortest`。
+> `-shortest` 在 `loop + stillimage` 模式下會因編碼器 buffer 導致影像軌比音訊軌多出約 3 秒的空白尾巴。
 
 **參數說明**：
 | 參數 | 值 | 用途 |

@@ -104,15 +104,19 @@ def main():
                 f"subtitles=subs_{chap_num}.vtt:force_style='FontSize=40,Outline=2,Shadow=1,MarginV=30'"
             )
 
+            # 使用 -t 精準截斷影片長度（取代不可靠的 -shortest）
+            # -shortest 在 loop+stillimage 模式下會因編碼器 buffer
+            # 導致影像軌比音訊軌多出約 3 秒的空白尾巴
             ffmpeg_cmd = [
                 ffmpeg, "-y",
                 "-loop", "1", "-framerate", "15",
                 "-i", f"image_{chap_num}.jpg",
                 "-i", f"trimmed_audio_{chap_num}.mp3",
+                "-t", f"{duration:.3f}",
                 "-vf", vf_filter,
                 "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac",
                 "-b:a", "192k", "-pix_fmt", "yuv420p",
-                "-shortest", f"chapter_{chap_num}.mp4"
+                f"chapter_{chap_num}.mp4"
             ]
             print("    [合成] 正在打包本集影片...")
             subprocess.run(ffmpeg_cmd, cwd=args.outdir, check=True,
